@@ -1,5 +1,6 @@
 library(ggplot2)
 library(dplyr)
+library("stringr")
 
 ## read a TCR file taking only certain lines, in particular the line with "IN"
 ## and where the count are bigger that 1
@@ -22,6 +23,7 @@ cleanse=function(aname){
 ## to each sequence, the corresponding frequence.
 ## If the sequence is not found the frequence is ZERO
 ## Return a dataframe containing the  1..n sequence, 1..n patient_id, 1..n frequency value
+## the columns of the dataframe are: "patient, frequency, and trxcseqtrxj
 trace_seq=function(ldataf, lseq, sampletype){
   tddf=data.frame(patient=NULL, frequency=NULL, trxvseqtrxj=NULL)
   for(i in 1:length(ldataf)){
@@ -81,7 +83,7 @@ violin_tcr=function(databind, tddf, title){
   ggplot(databind, aes(x=patient, y=frequency))+
     xlab("Sample") +
     ylab("Frequency (log10)") +
-    geom_violin()+
+    geom_violin(scale="width")+
     geom_text(data=counts, aes(label=n, y=max(databind$frequency)*2),
               position=position_dodge(0.9) )+
     ggtitle(title)+
@@ -104,7 +106,7 @@ violin_tcr_lot=function(databind, tddf, title){
   ggplot(databind, aes(x=patient, y=frequency))+
     xlab("Sample") +
     ylab("Frequency (log10)") +
-    geom_violin()+
+    geom_violin(scale="width")+
     geom_text(data=counts, aes(label=n, y=max(databind$frequency)*2),
               position=position_dodge(0.9) )+
     ggtitle(title)+
@@ -127,7 +129,7 @@ base_violin=function(databind, title){
   p=ggplot(databind, aes(x=patient, y=frequency))+
     xlab("Sample") +
     ylab("Frequency (log10)") +
-    geom_violin()+
+    geom_violin(scale="width")+
     geom_text(data=counts, aes(label=n, y=max(databind$frequency)*2),
               position=position_dodge(0.9) )+
     ggtitle(title)+
@@ -149,7 +151,7 @@ base_violin_nopoints=function(databind, title){
   p=ggplot(databind, aes(x=patient, y=frequency))+
     xlab("Sample") +
     ylab("Frequency (log10)") +
-    geom_violin()+
+    geom_violin(scale = "width")+
     geom_text(data=counts, aes(label=n, y=max(databind$frequency)*2),
               position=position_dodge(0.9) )+
     ggtitle(title)+
@@ -169,7 +171,7 @@ base_violin_nostat=function(databind, title){
   p=ggplot(databind, aes(x=patient, y=frequency))+
     xlab("Sample") +
     ylab("Frequency (log10)") +
-    geom_violin()+
+    geom_violin(scale="width")+
     ggtitle(title)+
     theme(plot.title = element_text(hjust = 0.5))+
     scale_y_log10(
@@ -183,11 +185,10 @@ base_violin_nostat=function(databind, title){
 }
 
 
-## from a list of files and a list of identifier (the identifier explain the origin of the file)
+## from a list of files and a list of identifier (the identifier explain the origin of the file and what they are)
 ## generate a dataframe that will be used for the violin plots, it will also generate
 ## the columns for the frequency and the concatenation between trxv-cdr3-trxj
-## in uses cleanse to read the originals files, removing the sequences with only one entry and
-## not in the "IN" frame
+## it remove the sequences with only one entry, it keeps only the "IN" frame
 
 create_df=function(lfiles, sampletype){
   databind=NULL
@@ -205,12 +206,14 @@ create_df=function(lfiles, sampletype){
 
 
 ## calculate the Shannon entropy of a TCR dataframe
+## for dataframe with ONE SINGLE SAMPLE
 entropy=function(adf){
   res=-sum(adf$frequency*log2(adf$frequency))
   return(res)
 }
 
 ## calculate how many TCR sequences have a frequency "thresholds times" above the median
+## for dataframe with ONE SINGLE SAMPLE
 n_over_median=function(adf, athreshold){
   ## these dataframe should be already ordered but just to be sure...
   order_res=sort(adf$frequency, decreasing = TRUE)
@@ -221,6 +224,7 @@ n_over_median=function(adf, athreshold){
 
 ## calculate how many TCR sequences (fraction of TCR) are needed to reach a given threshold
 ## starting from the most frequent to the lowest   (the threshold should not be bigger than 1)
+## for dataframe with ONE SINGLE SAMPLE
 how_many_for=function(adf, athreshold){
   order_res=sort(adf$frequency, decreasing = TRUE)
   ntotal=nrow(adf)
@@ -234,9 +238,42 @@ how_many_for=function(adf, athreshold){
   return(-1)
 }
 
-
+## compute the clonality of a dataframe containing ONE SINGLE SAMPLE
 clonality=function(adf){
   res=sum(adf$frequency*log(adf$frequency))
   res=  1+ (res/log(nrow(adf)))
   return(res)
 }
+
+
+convert_seq=function(x){
+  astr=strsplit(x, "_")[[1]]
+  return(paste(astr[1], astr[3], astr[2], sep="_")) 
+}
+
+## convert David Barras dataframe to ggplot format for the violin plots
+convert_barras=function(barr_df){
+  
+  ## count how many samples there are in the dataframe
+  sampletypes=(grepl("is_in_", colnames(barr_df)))
+  num_samples=sum(sampletypes)
+  sampletypes=colnames(barr_df)[sampletypes]
+  sampletypes=str_replace(sampletypes, "is_in_", "")
+  
+  
+  ## counting columns start at num_samples+2, frequencies start at num_samples*2 + 2
+  fdf=NULL
+  for(i in 1:num_samples ){
+    type_col=i+1
+    count_col=num_samples+type_col
+    
+    tdf=barr_df[ barr_df[,count_col]>0,c(1, count_col) ]
+    tdf[,2]=tdf[,2]/sum(tdf[,2])
+    tdf$patient=rep(sampletypes[i],nrow(tdf) )
+    tdf$unique_id=sapply(tdf$unique_id, convert_seq)
+    colnames(tdf)=c("trxvseqtrxj","frequency","patient")
+    fdf=rbind(fdf, tdf)
+  }
+  return(fdf)
+}
+
