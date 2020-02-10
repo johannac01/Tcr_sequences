@@ -1,6 +1,10 @@
 library(ggplot2)
 library(dplyr)
 library("stringr")
+library(data.table)
+library(scales)
+library(lawstat)
+
 
 ## read a TCR file taking only certain lines, in particular the line with "IN"
 ## and where the count are bigger that 1
@@ -92,7 +96,8 @@ violin_tcr=function(databind, tddf, title){
     scale_color_discrete(name = "TCR sequence") +
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
-      labels = scales::trans_format("log10", scales::math_format(10^.x))
+      labels = scales::trans_format("log10", scales::math_format(10^.x)), 
+      limits=c(0.000001,0.1)
     ) +
     annotation_logticks(sides="l") +
     geom_point(size=0.5) +
@@ -115,7 +120,8 @@ violin_tcr_lot=function(databind, tddf, title){
     scale_color_discrete(name = "TCR sequence") +
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
-      labels = scales::trans_format("log10", scales::math_format(10^.x))
+      labels = scales::trans_format("log10", scales::math_format(10^.x)), 
+      limits=c(0.000001,0.1)
     ) +
     annotation_logticks(sides="l") +
     geom_point(size=0.5) +
@@ -158,7 +164,8 @@ base_violin_nopoints=function(databind, title){
     theme(plot.title = element_text(hjust = 0.5))+
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
-      labels = scales::trans_format("log10", scales::math_format(10^.x))
+      labels = scales::trans_format("log10", scales::math_format(10^.x)), 
+      limits=c(0.000001,0.1)
     ) +
     annotation_logticks(sides="l") +
     stat_summary(fun.y=median, geom="point", size=4, color="red")+
@@ -176,7 +183,8 @@ base_violin_nostat=function(databind, title){
     theme(plot.title = element_text(hjust = 0.5))+
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
-      labels = scales::trans_format("log10", scales::math_format(10^.x))
+      labels = scales::trans_format("log10", scales::math_format(10^.x)), 
+      limits=c(0.000001,0.1)
     ) +
     annotation_logticks(sides="l") +
     geom_point(size=0.5)+
@@ -239,6 +247,10 @@ how_many_for=function(adf, athreshold){
 }
 
 ## compute the clonality of a dataframe containing ONE SINGLE SAMPLE
+## this is also called 1-Pielou index
+## definition from:
+## "TCR Repertoire Analysis Reveals Mobilization of Novel CD8+ T Cell
+##  Clones Into the Cancer-Immunity Cycle Following Anti-CD4 Antibody Administration"
 clonality=function(adf){
   res=sum(adf$frequency*log(adf$frequency))
   res=  1+ (res/log(nrow(adf)))
@@ -276,4 +288,34 @@ convert_barras=function(barr_df){
   }
   return(fdf)
 }
+
+
+### plot Entropy, Clonality and Gini index for all the different tissue/patient contained
+### in a dataframe
+dev_tcr_estimators=function(databind,sampletype){
+  astatdf=setNames(data.frame(matrix(ncol = 4, nrow = 0)), c("entropy", "clonality", "gini", "sampletype"))
+  for(k in sampletype){
+    adf=databind[databind$patient==k,]
+    en=entropy(adf)
+    cl=clonality(adf)
+    gi=gini.index(adf$frequency)
+    gi=as.numeric(gi$statistic)
+    adf=data.frame(en, cl, gi, k)
+    astatdf=rbind(astatdf, adf)
+  }
+  
+  colnames(astatdf)=c("Entropy", "Clonality", "Gini", "sampletype")
+  astatdf2=melt(astatdf, id.vars="sampletype")
+  p=ggplot(astatdf2, aes(x=sampletype, y=value, group=variable, color=variable))+
+    geom_line()+
+    geom_point()+
+    geom_text(aes(label=round(value, 2)),hjust=0.5, vjust=-1, show.legend = FALSE)+
+    scale_y_log10(
+      breaks = scales::trans_breaks("log10", function(x) 10^x),
+      labels = scales::trans_format("log10", scales::math_format(10^.x)),
+      limits=c(0.01,50) )+
+    labs(color="Estimators")
+  return(p)
+}
+
 
