@@ -1,0 +1,58 @@
+source("tcr_plots.r")
+
+## Calculate the Jaccard Index = statistic used to compare the similarity between sets for binary variables
+## Here to see if a sequence from a sample is present in another sample or not: see overlap, but independently of their
+## frequency. Sharedseq is the list of common seq between two samples (found by the function find_n_common_seq) and
+##ldataf is a list of 2 components containing both time points you want to compare
+
+jaccard=function(ldataf){
+  biggerrep=vector("list", 1)
+  if(nrow(ldataf[[1]])>nrow(ldataf[[2]])){
+    biggerrep<-ldataf[[1]]
+  } 
+  else {biggerrep<-ldataf[[2]]}
+  
+  sharedseq=find_n_common_seq(ldataf,nrow(biggerrep), biggerrep)
+  
+  similarity=length(sharedseq)
+  totaldiffseq=(nrow(ldataf[[1]])-similarity)+(nrow(ldataf[[2]])-similarity)+similarity
+  
+  JI<-similarity/totaldiffseq
+  writeLines(paste("The Jaccard index for", unique(ldataf[[1]]$patient), "and", unique(ldataf[[2]]$patient), "is", JI))
+  biggerrep
+  sharedseq
+  length(sharedseq)
+}
+
+##################################################################################
+#################### Comparison blood vs tumor repertoire ########################
+##################################################################################
+## Return a list containing the TCR sequence, its frequency and the patient sample it corresponds to
+## With four different components inside: onlyT=TCR found only in tumor tissue / onlyB=TCR found only in blood
+## T_biggerthan_B=TCR at higher frequency in tumor than blood / B_biggerthan_T=TCR at higher frequency in blood than tumor
+## Give ldataf, a list with two components containing the TCRs found in blood FIRST and tumor SECOND timepoint you want to compare
+## give as blood variable the name of your blood timepoint (eg. "B0"), same for tumor timepoint
+Overlap_blood_tumor=function(ldataf, blood, tumor){
+  
+  biggerrep=vector("list", 1)
+  if(nrow(ldataf[[1]])>nrow(ldataf[[2]])){
+    biggerrep<-ldataf[[1]]
+  } 
+  else {biggerrep<-ldataf[[2]]}
+  
+  sharedseq=find_n_common_seq(ldataf,nrow(biggerrep), biggerrep)
+  onlyB<-ldataf[[1]][!(ldataf[[1]]$trxvseqtrxj %in% sharedseq),]
+  onlyT<-ldataf[[2]][!(ldataf[[2]]$trxvseqtrxj %in% sharedseq),]
+  
+  sharedB<-ldataf[[1]][(ldataf[[1]]$trxvseqtrxj %in% sharedseq),]
+  sharedT<-ldataf[[2]][(ldataf[[2]]$trxvseqtrxj %in% sharedseq),]
+  sharedB_T<-rbind(sharedB,sharedT)
+  maxsharedB_T<-aggregate(frequency~trxvseqtrxj, data=sharedB_T, max)
+  maxsharedB_T<-merge(maxsharedB_T, sharedB_T)
+  
+  B_biggerthan_T<-subset(maxsharedB_T, patient==blood)
+  T_biggerthan_B<-subset(maxsharedB_T, patient==tumor)
+  
+  return(list(onlyB, onlyT, B_biggerthan_T, T_biggerthan_B))
+  
+}
