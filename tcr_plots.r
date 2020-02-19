@@ -10,7 +10,7 @@ library(lawstat)
 ## and where the count are bigger that 1
 cleanse=function(aname){
   df=read.csv(aname, sep="\t")
-  df=df[df[,2]>1 & df[,5]=="IN",]
+  df=df[df[,2]>1 & df[,5]=="IN" & df[,4]!="undefined,_,_",]
   df$CDR3_aaseq=as.character(df[,6])
   df=df[df$CDR3_aaseq!="", ]
   
@@ -97,7 +97,7 @@ violin_tcr=function(databind, tddf, title){
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
       labels = scales::trans_format("log10", scales::math_format(10^.x)), 
-      limits=c(0.000001,0.1)
+      limits=c(0.000001,0.5)
     ) +
     annotation_logticks(sides="l") +
     geom_point(size=0.5) +
@@ -121,7 +121,7 @@ violin_tcr_lot=function(databind, tddf, title){
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
       labels = scales::trans_format("log10", scales::math_format(10^.x)), 
-      limits=c(0.000001,0.1)
+      limits=c(0.000001,0.5)
     ) +
     annotation_logticks(sides="l") +
     geom_point(size=0.5) +
@@ -165,7 +165,7 @@ base_violin_nopoints=function(databind, title){
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
       labels = scales::trans_format("log10", scales::math_format(10^.x)), 
-      limits=c(0.000001,0.1)
+      limits=c(0.000001,0.5)
     ) +
     annotation_logticks(sides="l") +
     stat_summary(fun.y=median, geom="point", size=4, color="red")+
@@ -184,7 +184,7 @@ base_violin_nostat=function(databind, title){
     scale_y_log10(
       breaks = scales::trans_breaks("log10", function(x) 10^x),
       labels = scales::trans_format("log10", scales::math_format(10^.x)), 
-      limits=c(0.000001,0.1)
+      limits=c(0.000001,0.5)
     ) +
     annotation_logticks(sides="l") +
     geom_point(size=0.5)+
@@ -290,10 +290,37 @@ convert_barras=function(barr_df){
 }
 
 
+
+### estimate the number of common sequences between N samples
+### show their relative weight in each sample
+weight_of_shared=function(databind, sampletype){
+  ## finding the common sequences among all samples
+  seq_vect=list()
+  count=1
+  for(k in sampletype){
+    tdf=databind[databind$patient==k,"trxvseqtrxj"]
+    seq_vect[[k]]=tdf
+  }
+  
+  seq_inters=Reduce(intersect, seq_vect)
+  
+  ## computing their relative weight on the sample
+  rel_weight=data.frame(samplename=character(), rel_freq=numeric())
+  for(k in sampletype){
+    tdf=databind[databind$patient==k,]
+    ares=data.frame(samplename=k,rel_fre=sum(tdf[tdf$trxvseqtrxj %in% seq_inters, "frequency"]))
+    rel_weight=rbind(rel_weight, ares)
+  }
+  return(rel_weight)
+}
+
+
+
 ### plot Entropy, Clonality and Gini index for all the different tissue/patient contained
 ### in a dataframe
 dev_tcr_estimators=function(databind,sampletype){
   astatdf=setNames(data.frame(matrix(ncol = 4, nrow = 0)), c("entropy", "clonality", "gini", "sampletype"))
+
   for(k in sampletype){
     adf=databind[databind$patient==k,]
     en=entropy(adf)
@@ -304,7 +331,11 @@ dev_tcr_estimators=function(databind,sampletype){
     astatdf=rbind(astatdf, adf)
   }
   
-  colnames(astatdf)=c("Entropy", "Clonality", "Gini", "sampletype")
+  rel_weight=weight_of_shared(databind, sampletype)
+  
+  astatdf=cbind(relative_weight=rel_weight$rel_fre, astatdf)
+  
+  colnames(astatdf)=c("Shared freq. (weighted)", "Entropy", "Clonality", "Gini", "sampletype")
   astatdf2=melt(astatdf, id.vars="sampletype")
   p=ggplot(astatdf2, aes(x=sampletype, y=value, group=variable, color=variable))+
     geom_line()+
@@ -314,6 +345,7 @@ dev_tcr_estimators=function(databind,sampletype){
       breaks = scales::trans_breaks("log10", function(x) 10^x),
       labels = scales::trans_format("log10", scales::math_format(10^.x)),
       limits=c(0.01,50) )+
+    theme(text = element_text(size=20))+
     labs(color="Estimators")
   return(p)
 }
